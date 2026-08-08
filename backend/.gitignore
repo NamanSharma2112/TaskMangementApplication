@@ -1,0 +1,14 @@
+# dependencies
+/node_modules
+/dist
+
+# environment variables
+.env
+.env.*
+
+# Prisma
+/prisma/migrations
+
+# IDE / OS
+.DS_Store
+*.log

@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Task, TaskPriority, TaskStatus } from "@/types/task";
 
+const API_BASE_URL = "http://localhost:4000/api/tasks";
+
 interface TaskContextType {
   tasks: Task[];
   addTask: (task: Omit<Task, "id" | "createdAt">) => void;
@@ -15,6 +17,7 @@ interface TaskContextType {
   setStatusFilter: (status: string) => void;
   priorityFilter: string;
   setPriorityFilter: (priority: string) => void;
+  isBackendConnected: boolean;
 }
 
 const initialMockTasks: Task[] = [
@@ -48,7 +51,7 @@ const initialMockTasks: Task[] = [
   },
   {
     id: "task-3",
-    title: "Setup NestJS Backend Architecture & MongoDB Schema",
+    title: "Setup NestJS Backend Architecture & PostgreSQL Schema",
     description: "Prepare RESTful API endpoints for user auth, task CRUD operations, and pagination.",
     status: "todo",
     priority: "medium",
@@ -79,8 +82,26 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const [isBackendConnected, setIsBackendConnected] = useState(false);
 
-  useEffect(() => {
+  // Fetch tasks from NestJS PostgreSQL Backend API
+  const fetchTasksFromBackend = async () => {
+    try {
+      const res = await fetch(API_BASE_URL);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setTasks(data);
+          setIsBackendConnected(true);
+          localStorage.setItem("pyramid-tasks", JSON.stringify(data));
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("Backend API offline, falling back to local persistence", e);
+      setIsBackendConnected(false);
+    }
+
     const saved = localStorage.getItem("pyramid-tasks");
     if (saved) {
       try {
@@ -92,6 +113,10 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
       setTasks(initialMockTasks);
       localStorage.setItem("pyramid-tasks", JSON.stringify(initialMockTasks));
     }
+  };
+
+  useEffect(() => {
+    fetchTasksFromBackend();
   }, []);
 
   const saveTasks = (newTasks: Task[]) => {
@@ -99,26 +124,56 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("pyramid-tasks", JSON.stringify(newTasks));
   };
 
-  const addTask = (taskData: Omit<Task, "id" | "createdAt">) => {
+  const addTask = async (taskData: Omit<Task, "id" | "createdAt">) => {
     const newTask: Task = {
       ...taskData,
       id: "task-" + Date.now(),
       createdAt: new Date().toISOString().split("T")[0],
     };
+
+    // Optimistic UI update
     saveTasks([newTask, ...tasks]);
+
+    // Send to NestJS Backend API
+    try {
+      await fetch(API_BASE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(taskData),
+      });
+      fetchTasksFromBackend();
+    } catch (e) {
+      console.error("Failed to sync task with NestJS backend:", e);
+    }
   };
 
-  const updateTask = (id: string, updatedFields: Partial<Task>) => {
+  const updateTask = async (id: string, updatedFields: Partial<Task>) => {
     saveTasks(
       tasks.map((t) => (t.id === id ? { ...t, ...updatedFields } : t))
     );
+
+    try {
+      await fetch(`${API_BASE_URL}/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedFields),
+      });
+    } catch (e) {
+      console.error("Failed to sync update with NestJS backend:", e);
+    }
   };
 
-  const deleteTask = (id: string) => {
+  const deleteTask = async (id: string) => {
     saveTasks(tasks.filter((t) => t.id !== id));
+
+    try {
+      await fetch(`${API_BASE_URL}/${id}`, { method: "DELETE" });
+    } catch (e) {
+      console.error("Failed to sync delete with NestJS backend:", e);
+    }
   };
 
-  const moveTaskStatus = (id: string, newStatus: TaskStatus) => {
+  const moveTaskStatus = async (id: string, newStatus: TaskStatus) => {
     updateTask(id, { status: newStatus });
   };
 
@@ -136,6 +191,7 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
         setStatusFilter,
         priorityFilter,
         setPriorityFilter,
+        isBackendConnected,
       }}
     >
       {children}
