@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { Check, Filter, RotateCcw } from "lucide-react";
+import React, { useState } from "react";
+import { Check, ChevronRight, Signal } from "lucide-react";
 import { useTasks } from "@/context/TaskContext";
 
 interface FilterDropdownProps {
@@ -11,102 +11,98 @@ interface FilterDropdownProps {
 
 export function FilterDropdown({ isOpen, onClose }: FilterDropdownProps) {
   const { priorityFilter, setPriorityFilter, statusFilter, setStatusFilter } = useTasks();
+  const [showPrioritySubMenu, setShowPrioritySubMenu] = useState(false);
 
   if (!isOpen) return null;
-
-  const priorities = [
-    { id: "all", label: "All Priorities" },
-    { id: "high", label: "High Priority" },
-    { id: "medium", label: "Medium Priority" },
-    { id: "low", label: "Low Priority" },
-  ];
-
-  const statuses = [
-    { id: "all", label: "All Statuses" },
-    { id: "todo", label: "To Do" },
-    { id: "in-progress", label: "Doing" },
-    { id: "completed", label: "Completed" },
-    { id: "on-hold", label: "On Hold" },
-  ];
-
-  const handleReset = () => {
-    setPriorityFilter("all");
-    setStatusFilter("all");
-  };
-
-  const isFiltered = priorityFilter !== "all" || statusFilter !== "all";
 
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="absolute right-16 top-14 w-60 rounded-2xl border theme-border theme-card p-3.5 shadow-xl z-50 animate-in fade-in-80 zoom-in-95 select-none space-y-3.5">
-        <div className="flex items-center justify-between pb-2 border-b theme-border">
-          <div className="flex items-center gap-1.5 text-xs font-bold theme-fg">
-            <Filter className="w-3.5 h-3.5" />
-            <span>Filter Tasks</span>
+      
+      {/* Main Filter Dropdown matching Screenshot 1 */}
+      <div className="absolute right-0 top-full mt-2 w-48 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2 shadow-2xl z-50 space-y-1 text-xs font-semibold animate-in fade-in zoom-in-95 duration-100 select-none">
+        
+        <button className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 transition-colors">
+          <div className="flex items-center gap-2.5">
+            <div className="w-3.5 h-3.5 rounded-full border-2 border-zinc-400" />
+            <span>Status</span>
           </div>
-          {isFiltered && (
-            <button
-              onClick={handleReset}
-              className="flex items-center gap-1 text-[11px] font-semibold text-rose-500 hover:text-rose-600 transition-colors"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Reset</span>
-            </button>
+          <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
+        </button>
+
+        <div className="relative">
+          <button
+            onClick={() => setShowPrioritySubMenu(!showPrioritySubMenu)}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${
+              showPrioritySubMenu 
+                ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100" 
+                : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <Signal className="w-3.5 h-3.5 text-zinc-500" />
+              <span>Priority</span>
+            </div>
+            <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
+          </button>
+
+          {/* Priority Sub-Flyout matching Screenshot 1 */}
+          {showPrioritySubMenu && (
+            <div className="absolute right-full top-0 mr-2 w-44 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2 shadow-2xl z-50 space-y-1 animate-in slide-in-from-right-2 duration-150">
+              <p className="px-2.5 py-1 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                Priority
+              </p>
+              {[
+                { id: "all", label: "No Priority" },
+                { id: "urgent", label: "Urgent", color: "text-rose-500" },
+                { id: "high", label: "High", color: "text-amber-500" },
+                { id: "medium", label: "Medium", color: "text-amber-400" },
+                { id: "low", label: "Low", color: "text-zinc-400 dark:text-zinc-500" },
+              ].map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    setPriorityFilter(p.id);
+                    setShowPrioritySubMenu(false);
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-1.5 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-medium transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    {p.id !== "all" && <Signal className={`w-3 h-3 ${p.color}`} />}
+                    <span className={p.color || "text-zinc-700 dark:text-zinc-300"}>
+                      {p.label}
+                    </span>
+                  </div>
+                  {priorityFilter === p.id && (
+                    <Check className="w-3.5 h-3.5 text-zinc-900 dark:text-zinc-100" />
+                  )}
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Priority Section */}
-        <div className="space-y-1">
-          <label className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-1">
-            Priority
-          </label>
-          <div className="space-y-0.5">
-            {priorities.map((p) => {
-              const isSelected = priorityFilter === p.id;
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => setPriorityFilter(p.id)}
-                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors ${
-                    isSelected
-                      ? "theme-sidebar-active theme-fg font-semibold"
-                      : "theme-muted-fg hover:bg-[hsl(var(--accent))]"
-                  }`}
-                >
-                  <span>{p.label}</span>
-                  {isSelected && <Check className="w-3.5 h-3.5 theme-primary-text" />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Status Section */}
-        <div className="space-y-1 pt-1 border-t theme-border">
-          <label className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-1">
-            Status
-          </label>
-          <div className="space-y-0.5">
-            {statuses.map((s) => {
-              const isSelected = statusFilter === s.id;
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => setStatusFilter(s.id)}
-                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors ${
-                    isSelected
-                      ? "theme-sidebar-active theme-fg font-semibold"
-                      : "theme-muted-fg hover:bg-[hsl(var(--accent))]"
-                  }`}
-                >
-                  <span>{s.label}</span>
-                  {isSelected && <Check className="w-3.5 h-3.5 theme-primary-text" />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        {/* Other Filter Items */}
+        {[
+          { label: "Members", icon: "svg-users" },
+          { label: "Due Date", icon: "svg-calendar" },
+          { label: "Teams", icon: "svg-users-group" },
+          { label: "Labels", icon: "svg-tag" },
+          { label: "Reporter", icon: "svg-user" }
+        ].map((item) => (
+          <button
+            key={item.label}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              {/* Note: In a real app we'd use specific lucide icons here like Users, Calendar, Tag, User */}
+              <div className="w-3.5 h-3.5 bg-zinc-200 dark:bg-zinc-700 rounded-sm" />
+              <span>{item.label}</span>
+            </div>
+            <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
+          </button>
+        ))}
       </div>
     </>
   );

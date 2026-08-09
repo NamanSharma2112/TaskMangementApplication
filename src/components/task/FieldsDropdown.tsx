@@ -34,7 +34,7 @@ export function FieldsDropdown({
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="absolute right-12 top-12 w-56 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2.5 shadow-xl z-50 animate-in fade-in-80 zoom-in-95 select-none">
+      <div className="absolute right-0 top-full mt-2 w-56 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2.5 shadow-xl z-50 animate-in fade-in-80 zoom-in-95 select-none">
         {/* Top View Mode Switcher Tabs */}
         <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl mb-3">
           <button

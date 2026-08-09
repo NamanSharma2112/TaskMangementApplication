@@ -28,7 +28,7 @@ export default function SettingsLayout({
     {
       href: "/settings/color",
       label: "Color",
-      icon: <Palette className="w-4 h-4" />,
+      icon: <div className="w-3.5 h-3.5 rounded-sm bg-zinc-900 dark:bg-zinc-100" />,
     },
   ];
 
@@ -66,10 +66,10 @@ export default function SettingsLayout({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                className={`flex items-center gap-3 px-3 py-2 rounded-[10px] text-[13px] font-medium transition-colors ${
                   isActive
-                    ? "theme-sidebar-active theme-fg"
-                    : "theme-muted-fg hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--foreground))]"
+                    ? "bg-zinc-100/80 dark:bg-zinc-800/80 text-zinc-900 dark:text-zinc-50"
+                    : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:text-white"
                 }`}
               >
                 {item.icon}
