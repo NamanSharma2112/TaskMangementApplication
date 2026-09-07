@@ -6,9 +6,16 @@ import {
   Patch,
   Param,
   Delete,
+  Query,
 } from '@nestjs/common';
 import { TasksService } from './tasks.service';
-import { CreateTaskDto, UpdateTaskDto } from './dto/task.dto';
+import {
+  BulkUpdateTasksDto,
+  CreateTaskDto,
+  QueryTasksDto,
+  ReorderTasksDto,
+  UpdateTaskDto,
+} from './dto/task.dto';
 import { CurrentUser } from '../common/decorators/user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
@@ -20,8 +27,15 @@ export class TasksController {
 
   @Public()
   @Get()
-  findAll() {
-    return this.tasksService.findAll();
+  findAll(@Query() query: QueryTasksDto) {
+    return this.tasksService.findAll(query);
+  }
+
+  /** Same filters as GET /api/tasks, but paginated. */
+  @Public()
+  @Get('search')
+  search(@Query() query: QueryTasksDto) {
+    return this.tasksService.search(query);
   }
 
   @Public()
@@ -37,9 +51,31 @@ export class TasksController {
   }
 
   @Public()
+  @Post(':id/duplicate')
+  duplicate(@Param('id') id: string, @CurrentUser('id') userId?: string) {
+    return this.tasksService.duplicate(id, userId);
+  }
+
+  @Public()
+  @Patch('bulk')
+  bulkUpdate(@Body() dto: BulkUpdateTasksDto, @CurrentUser('id') userId?: string) {
+    return this.tasksService.bulkUpdate(dto, userId);
+  }
+
+  @Public()
+  @Patch('reorder')
+  reorder(@Body() dto: ReorderTasksDto) {
+    return this.tasksService.reorder(dto);
+  }
+
+  @Public()
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: any) {
-    return this.tasksService.update(id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateTaskDto,
+    @CurrentUser('id') userId?: string,
+  ) {
+    return this.tasksService.update(id, dto, userId);
   }
 
   @Public()
@@ -47,13 +83,24 @@ export class TasksController {
   updateStatus(
     @Param('id') id: string,
     @Body() body: { status: string },
+    @CurrentUser('id') userId?: string,
   ) {
-    return this.tasksService.updateStatus(id, body.status);
+    return this.tasksService.updateStatus(id, body.status, userId);
+  }
+
+  @Public()
+  @Patch(':id/archive')
+  archive(
+    @Param('id') id: string,
+    @Body() body: { archived?: boolean },
+    @CurrentUser('id') userId?: string,
+  ) {
+    return this.tasksService.archive(id, body?.archived ?? true, userId);
   }
 
   @Roles(Role.ADMIN, Role.MANAGER)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.tasksService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser('id') userId?: string) {
+    return this.tasksService.remove(id, userId);
   }
 }

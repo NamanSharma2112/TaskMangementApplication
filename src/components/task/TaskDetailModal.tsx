@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Task, TaskPriority, TaskStatus } from "@/types/task";
+import { Label, Subtask, Task, TaskPriority, TaskStatus, UserSummary } from "@/types/task";
 import { useTasks } from "@/context/TaskContext";
+import { api } from "@/lib/api";
+import { ActivityFeed } from "@/components/activity/ActivityFeed";
 import { useAuth } from "@/context/AuthContext";
 import {
   X,
@@ -36,14 +38,6 @@ interface CommentItem {
   time: string;
   content: string;
   authorId?: string;
-}
-
-interface SubtaskItem {
-  id: string;
-  title: string;
-  priority: string;
-  completed: boolean;
-  date: string;
 }
 
 interface ResourceItem {
@@ -109,7 +103,7 @@ export function TaskDetailModal({ isOpen, onClose, task }: TaskDetailModalProps)
   const [status, setStatus] = useState<TaskStatus>("todo");
   const [priority, setPriority] = useState<TaskPriority>("high");
   const [dueDate, setDueDate] = useState("12 Aug 2026");
-  const [assignee, setAssignee] = useState<{ name: string; avatar?: string } | null>(null);
+  const [assignee, setAssignee] = useState<UserSummary | null>(null);
 
   // Dropdown popup triggers
   const [showStatusMenu, setShowStatusMenu] = useState(false);
@@ -128,12 +122,15 @@ export function TaskDetailModal({ isOpen, onClose, task }: TaskDetailModalProps)
   const [resourceUrlInput, setResourceUrlInput] = useState("");
   const [isSubmittingResource, setIsSubmittingResource] = useState(false);
 
-  // Subtasks state
-  const [subtasks, setSubtasks] = useState<SubtaskItem[]>([
-    { id: "sub-1", title: "Review Figma component specs", priority: "high", completed: true, date: "12 Aug 2026" },
-    { id: "sub-2", title: "Implement dark & light theme variables", priority: "low", completed: false, date: "15 Aug 2026" },
-    { id: "sub-3", title: "Verify touch interactions on mobile viewport", priority: "medium", completed: false, date: "18 Aug 2026" },
-  ]);
+  // Label state — the task's own labels plus the workspace-wide set.
+  const [taskLabels, setTaskLabels] = useState<Label[]>([]);
+  const [availableLabels, setAvailableLabels] = useState<Label[]>([]);
+
+  // Subtasks state — loaded from (and written straight back to) the API.
+  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [newSubtaskPriority, setNewSubtaskPriority] = useState("medium");
+  const [isAddingSubtask, setIsAddingSubtask] = useState(false);
 
   // Comments state
   const [comments, setComments] = useState<CommentItem[]>([]);
@@ -151,6 +148,19 @@ export function TaskDetailModal({ isOpen, onClose, task }: TaskDetailModalProps)
       setPriority(task.priority);
       if (task.dueDate) setDueDate(task.dueDate);
       if (task.assignee) setAssignee(task.assignee);
+
+      // Labels: the task's own set, plus everything available to attach.
+      setTaskLabels(task.labels || []);
+      api.labels.forTask(task.id).then(setTaskLabels).catch(() => {});
+      api.labels.list().then(setAvailableLabels).catch(() => setAvailableLabels([]));
+
+      // Fetch subtasks from the NestJS API; the task payload already carries
+      // them, so start from that and reconcile with a fresh read.
+      setSubtasks(task.subtasks || []);
+      api.subtasks
+        .list(task.id)
+        .then(setSubtasks)
+        .catch(() => setSubtasks(task.subtasks || []));
 
       // Fetch resources from NestJS API
       fetch(`${API_BASE_URL}/api/tasks/${task.id}/resources`)
@@ -313,25 +323,78 @@ export function TaskDetailModal({ isOpen, onClose, task }: TaskDetailModalProps)
     }
   };
 
-  const handleToggleSubtask = (subId: string) => {
+  const handleAttachLabel = async (labelId: string) => {
+    if (!task) return;
+    const previous = taskLabels;
+    const label = availableLabels.find((l) => l.id === labelId);
+    if (label) setTaskLabels((prev) => [...prev, label]);
+
+    try {
+      setTaskLabels(await api.labels.attach(task.id, { labelId }));
+    } catch (e) {
+      console.warn("Could not attach the label, reverting", e);
+      setTaskLabels(previous);
+    }
+  };
+
+  const handleDetachLabel = async (labelId: string) => {
+    if (!task) return;
+    const previous = taskLabels;
+    setTaskLabels((prev) => prev.filter((l) => l.id !== labelId));
+
+    try {
+      setTaskLabels(await api.labels.detach(task.id, labelId));
+    } catch (e) {
+      console.warn("Could not remove the label, reverting", e);
+      setTaskLabels(previous);
+    }
+  };
+
+  const handleToggleSubtask = async (subId: string) => {
+    const target = subtasks.find((s) => s.id === subId);
+    if (!target) return;
+
+    const nextCompleted = !target.completed;
     setSubtasks((prev) =>
-      prev.map((s) => (s.id === subId ? { ...s, completed: !s.completed } : s))
+      prev.map((s) => (s.id === subId ? { ...s, completed: nextCompleted } : s))
     );
+
+    try {
+      await api.subtasks.update(subId, { completed: nextCompleted });
+    } catch (e) {
+      console.warn("Could not save the subtask, reverting", e);
+      setSubtasks((prev) =>
+        prev.map((s) => (s.id === subId ? { ...s, completed: target.completed } : s))
+      );
+    }
   };
 
-  const handleAddSubtask = () => {
-    const newSub: SubtaskItem = {
-      id: "sub-" + Date.now(),
-      title: `New Subtask ${subtasks.length + 1}`,
-      priority: "medium",
-      completed: false,
-      date: "20 Aug 2026",
-    };
-    setSubtasks([...subtasks, newSub]);
+  const handleAddSubtask = async () => {
+    if (!task || !newSubtaskTitle.trim()) return;
+
+    try {
+      const created = await api.subtasks.create(task.id, {
+        title: newSubtaskTitle.trim(),
+        priority: newSubtaskPriority,
+      });
+      setSubtasks((prev) => [...prev, created]);
+      setNewSubtaskTitle("");
+      setIsAddingSubtask(false);
+    } catch (e) {
+      console.warn("Could not create the subtask", e);
+    }
   };
 
-  const handleDeleteSubtask = (subId: string) => {
+  const handleDeleteSubtask = async (subId: string) => {
+    const previous = subtasks;
     setSubtasks((prev) => prev.filter((s) => s.id !== subId));
+
+    try {
+      await api.subtasks.remove(subId);
+    } catch (e) {
+      console.warn("Could not delete the subtask, reverting", e);
+      setSubtasks(previous);
+    }
   };
 
   const handleAddComment = async (e: React.FormEvent) => {
@@ -529,17 +592,46 @@ export function TaskDetailModal({ isOpen, onClose, task }: TaskDetailModalProps)
                 </div>
               </div>
 
-              <div className="flex items-center gap-4 text-xs">
-                <span className="font-semibold text-zinc-400 w-24 shrink-0">Labels</span>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {["Research", "Design", "Development", "Testing", "Deployment"].map((lbl) => (
+              <div className="flex items-start gap-4 text-xs">
+                <span className="font-semibold text-zinc-400 w-24 shrink-0 pt-1">Labels</span>
+                <div className="flex-1 flex items-center gap-1.5 flex-wrap">
+                  {taskLabels.map((lbl) => (
                     <span
-                      key={lbl}
-                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-semibold"
+                      key={lbl.id}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-semibold text-white group"
+                      style={{ backgroundColor: lbl.color }}
                     >
-                      <Tag className="w-3 h-3 text-zinc-400" /> {lbl}
+                      <Tag className="w-3 h-3" /> {lbl.name}
+                      <button
+                        onClick={() => handleDetachLabel(lbl.id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity hover:opacity-70"
+                        title={`Remove ${lbl.name}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
                     </span>
                   ))}
+
+                  {availableLabels
+                    .filter((l) => !taskLabels.some((t) => t.id === l.id))
+                    .map((lbl) => (
+                      <button
+                        key={lbl.id}
+                        onClick={() => handleAttachLabel(lbl.id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 font-semibold transition-colors"
+                        title={`Add ${lbl.name}`}
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: lbl.color }}
+                        />
+                        {lbl.name}
+                      </button>
+                    ))}
+
+                  {taskLabels.length === 0 && availableLabels.length === 0 && (
+                    <span className="text-zinc-400 font-medium">No labels available.</span>
+                  )}
                 </div>
               </div>
 
@@ -638,11 +730,33 @@ export function TaskDetailModal({ isOpen, onClose, task }: TaskDetailModalProps)
 
             {/* Interactive Subtasks Section */}
             <div className="space-y-3 pt-4">
-              <div className="flex items-center justify-between text-sm font-bold text-zinc-900 dark:text-zinc-100">
+              <div className="flex items-center justify-between gap-4 text-sm font-bold text-zinc-900 dark:text-zinc-100">
                 <div className="flex items-center gap-2">
                   <ChevronDown className="w-4 h-4 text-zinc-500" />
-                  <span>Subtasks ({subtasks.filter((s) => s.completed).length}/{subtasks.length})</span>
+                  <span>
+                    Subtasks ({subtasks.filter((s) => s.completed).length}/{subtasks.length})
+                  </span>
                 </div>
+                {subtasks.length > 0 && (
+                  <div className="flex items-center gap-2 min-w-[120px]">
+                    <div className="flex-1 h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                        style={{
+                          width: `${Math.round(
+                            (subtasks.filter((s) => s.completed).length / subtasks.length) * 100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <span className="text-[11px] font-semibold text-zinc-400 tabular-nums">
+                      {Math.round(
+                        (subtasks.filter((s) => s.completed).length / subtasks.length) * 100,
+                      )}
+                      %
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden text-xs">
@@ -657,6 +771,13 @@ export function TaskDetailModal({ isOpen, onClose, task }: TaskDetailModalProps)
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 font-medium">
+                    {subtasks.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-5 px-4 text-center text-zinc-400 font-medium">
+                          No subtasks yet.
+                        </td>
+                      </tr>
+                    )}
                     {subtasks.map((st) => (
                       <tr key={st.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/60 transition-colors">
                         <td className="py-3 px-4">
@@ -670,10 +791,21 @@ export function TaskDetailModal({ isOpen, onClose, task }: TaskDetailModalProps)
                         <td className={`py-3 px-4 font-semibold ${st.completed ? "line-through text-zinc-400" : "text-zinc-800 dark:text-zinc-200"}`}>
                           {st.title}
                         </td>
-                        <td className="py-3 px-4 text-rose-500 font-semibold">
-                          📊 {st.priority.charAt(0).toUpperCase() + st.priority.slice(1)}
+                        <td
+                          className={`py-3 px-4 font-semibold ${
+                            st.priority === "urgent" || st.priority === "high"
+                              ? "text-rose-500"
+                              : st.priority === "medium"
+                                ? "text-amber-500"
+                                : "text-zinc-400"
+                          }`}
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            <Signal className="w-3 h-3" />
+                            {st.priority.charAt(0).toUpperCase() + st.priority.slice(1)}
+                          </span>
                         </td>
-                        <td className="py-3 px-4 text-zinc-500">{st.date}</td>
+                        <td className="py-3 px-4 text-zinc-500">{st.dueDate || "—"}</td>
                         <td className="py-3 px-4 text-right">
                           <button
                             onClick={() => handleDeleteSubtask(st.id)}
@@ -688,15 +820,65 @@ export function TaskDetailModal({ isOpen, onClose, task }: TaskDetailModalProps)
                   </tbody>
                 </table>
                 <div className="p-2 border-t border-zinc-100 dark:border-zinc-800">
-                  <button
-                    onClick={handleAddSubtask}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2 py-1 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Subtasks</span>
-                  </button>
+                  {isAddingSubtask ? (
+                    <div className="flex flex-wrap items-center gap-2 p-1">
+                      <input
+                        value={newSubtaskTitle}
+                        onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleAddSubtask();
+                          if (e.key === "Escape") setIsAddingSubtask(false);
+                        }}
+                        placeholder="What needs doing?"
+                        autoFocus
+                        className="flex-1 min-w-[160px] h-8 px-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-transparent text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+                      />
+                      <select
+                        value={newSubtaskPriority}
+                        onChange={(e) => setNewSubtaskPriority(e.target.value)}
+                        className="h-8 px-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-transparent text-xs font-semibold"
+                      >
+                        <option value="no-priority">None</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="urgent">Urgent</option>
+                      </select>
+                      <button
+                        onClick={handleAddSubtask}
+                        className="h-8 px-3 rounded-lg theme-btn-primary text-xs font-bold"
+                      >
+                        Add
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsAddingSubtask(false);
+                          setNewSubtaskTitle("");
+                        }}
+                        className="h-8 px-2 rounded-lg text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setIsAddingSubtask(true)}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-2 py-1 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Subtask</span>
+                    </button>
+                  )}
                 </div>
               </div>
+            </div>
+
+            {/* Per-task audit trail */}
+            <div className="space-y-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+              <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
+                Activity
+              </h3>
+              {task && <ActivityFeed key={task.id} taskId={task.id} compact />}
             </div>
 
             {/* Activity Comments Section */}

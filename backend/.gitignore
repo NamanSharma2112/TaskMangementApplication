@@ -5,6 +5,7 @@
 # environment variables
 .env
 .env.*
+!.env.example
 
 # Prisma
 /prisma/migrations

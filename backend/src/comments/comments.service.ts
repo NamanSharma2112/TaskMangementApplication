@@ -1,10 +1,16 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActivityService } from '../activity/activity.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateCommentDto } from './dto/comment.dto';
 
 @Injectable()
 export class CommentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activity: ActivityService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async findByTask(taskId: string) {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
@@ -35,7 +41,7 @@ export class CommentsService {
       throw new NotFoundException(`Task with ID "${taskId}" not found.`);
     }
 
-    return this.prisma.comment.create({
+    const comment = await this.prisma.comment.create({
       data: {
         content: dto.content,
         taskId: taskId,
@@ -53,6 +59,31 @@ export class CommentsService {
         },
       },
     });
+
+    await this.activity.record({
+      type: 'comment.added',
+      message: `commented on "${task.title}"`,
+      actorId: authorId,
+      taskId,
+      projectId: task.projectId,
+      meta: { commentId: comment.id },
+    });
+
+    // The assignee and the creator both follow a task, so both get pinged.
+    for (const userId of new Set([task.assigneeId, task.creatorId].filter(Boolean))) {
+      await this.notifications.notify(
+        {
+          userId: userId as string,
+          type: 'comment.added',
+          title: `New comment on "${task.title}"`,
+          body: dto.content.slice(0, 140),
+          taskId,
+        },
+        authorId,
+      );
+    }
+
+    return comment;
   }
 
   async remove(id: string, userId?: string, userRole?: string) {

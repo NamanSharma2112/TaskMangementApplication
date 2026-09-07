@@ -8,38 +8,72 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  password     String?
-  name         String
-  avatar       String?
-  role         String    @default("MEMBER") // ADMIN, MANAGER, MEMBER, GUEST
-  isGuest      Boolean   @default(false)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  tasks        Task[]    @relation("AssignedTasks")
-  createdTasks Task[]    @relation("CreatedTasks")
-  projects     Project[] @relation("ProjectLead")
-  comments     Comment[]
+  id            String         @id @default(uuid())
+  email         String         @unique
+  password      String?
+  name          String
+  avatar        String?
+  role          String         @default("MEMBER") // ADMIN, MANAGER, MEMBER, GUEST
+  isGuest       Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  tasks         Task[]         @relation("AssignedTasks")
+  createdTasks  Task[]         @relation("CreatedTasks")
+  projects      Project[]      @relation("ProjectLead")
+  comments      Comment[]
+  notifications Notification[] @relation("UserNotifications")
+  activities    Activity[]     @relation("ActivityActor")
 }
 
 model Task {
-  id          String     @id @default(uuid())
-  title       String
-  description String?
-  status      String     @default("todo") // todo, in-progress, completed, on-hold
-  priority    String     @default("medium") // low, medium, high, urgent
-  category    String     @default("General")
-  dueDate     String?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  assigneeId  String?
-  assignee    User?      @relation("AssignedTasks", fields: [assigneeId], references: [id], onDelete: SetNull)
-  creatorId   String?
-  creator     User?      @relation("CreatedTasks", fields: [creatorId], references: [id], onDelete: SetNull)
-  subtasks    Subtask[]
-  comments    Comment[]
-  resources   Resource[]
+  id            String         @id @default(uuid())
+  title         String
+  description   String?
+  status        String         @default("todo") // todo, in-progress, doing, completed, on-hold, backlog
+  priority      String         @default("medium") // no-priority, low, medium, high, urgent
+  category      String         @default("General")
+  dueDate       String?
+  position      Int            @default(0)
+  archived      Boolean        @default(false)
+  completedAt   DateTime?
+  estimateHours Float?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  assigneeId    String?
+  assignee      User?          @relation("AssignedTasks", fields: [assigneeId], references: [id], onDelete: SetNull)
+  creatorId     String?
+  creator       User?          @relation("CreatedTasks", fields: [creatorId], references: [id], onDelete: SetNull)
+  projectId     String?
+  project       Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  subtasks      Subtask[]
+  comments      Comment[]
+  resources     Resource[]
+  labels        TaskLabel[]
+  activities    Activity[]
+  notifications Notification[]
+
+  @@index([status])
+  @@index([assigneeId])
+  @@index([projectId])
+  @@index([archived])
+}
+
+model Label {
+  id        String      @id @default(uuid())
+  name      String      @unique
+  color     String      @default("#6366f1")
+  createdAt DateTime    @default(now())
+  tasks     TaskLabel[]
+}
+
+model TaskLabel {
+  taskId  String
+  labelId String
+  task    Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label   Label  @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, labelId])
+  @@index([labelId])
 }
 
 model Resource {
@@ -60,26 +94,68 @@ model Comment {
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   authorId  String?
   author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([taskId])
 }
 
 model Subtask {
   id        String  @id @default(uuid())
   title     String
   completed Boolean @default(false)
+  priority  String  @default("medium")
+  dueDate   String?
+  position  Int     @default(0)
   taskId    String
   task      Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
 }
 
 model Project {
-  id          String   @id @default(uuid())
+  id          String     @id @default(uuid())
   title       String
   description String?
-  category    String   @default("Web App")
-  status      String   @default("Active")
-  priority    String   @default("high")
+  category    String     @default("Web App")
+  status      String     @default("Active") // Active, Planning, On Hold, Completed, Archived
+  priority    String     @default("high")
   dueDate     String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
   leadId      String?
-  lead        User?    @relation("ProjectLead", fields: [leadId], references: [id], onDelete: SetNull)
+  lead        User?      @relation("ProjectLead", fields: [leadId], references: [id], onDelete: SetNull)
+  tasks       Task[]
+  activities  Activity[]
+}
+
+model Activity {
+  id        String   @id @default(uuid())
+  type      String // task.created, task.updated, task.status_changed, task.assigned, comment.added, ...
+  message   String
+  meta      String? // JSON-encoded payload
+  createdAt DateTime @default(now())
+  actorId   String?
+  actor     User?    @relation("ActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([projectId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  type      String // task.assigned, comment.added, task.due_soon, task.overdue, task.status_changed
+  title     String
+  body      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
 }

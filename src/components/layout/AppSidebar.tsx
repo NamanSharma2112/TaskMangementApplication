@@ -8,6 +8,8 @@ import {
   ChevronsUpDown,
   LayoutGrid,
   FolderKanban,
+  BarChart3,
+  History,
   Sun,
   Palette,
   Settings,
@@ -289,6 +291,42 @@ export function AppSidebar({
             >
               <FolderKanban className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
               <span>Projects</span>
+            </motion.button>
+
+            <motion.button
+              custom={2}
+              variants={navItemVariants}
+              initial="hidden"
+              animate="visible"
+              onClick={() => setActiveTab && setActiveTab("analytics")}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                activeTab === "analytics"
+                  ? "theme-sidebar-active text-zinc-900 dark:text-zinc-50 font-semibold"
+                  : "text-zinc-600 dark:text-zinc-400 hover:bg-[hsl(var(--accent))]"
+              }`}
+              whileHover={{ x: 3 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <BarChart3 className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
+              <span>Analytics</span>
+            </motion.button>
+
+            <motion.button
+              custom={3}
+              variants={navItemVariants}
+              initial="hidden"
+              animate="visible"
+              onClick={() => setActiveTab && setActiveTab("activity")}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                activeTab === "activity"
+                  ? "theme-sidebar-active text-zinc-900 dark:text-zinc-50 font-semibold"
+                  : "text-zinc-600 dark:text-zinc-400 hover:bg-[hsl(var(--accent))]"
+              }`}
+              whileHover={{ x: 3 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <History className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
+              <span>Activity</span>
             </motion.button>
           </nav>
         </div>

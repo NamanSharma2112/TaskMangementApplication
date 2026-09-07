@@ -4,11 +4,14 @@ import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTasks } from "@/context/TaskContext";
-import { Task, TaskPriority, TaskStatus } from "@/types/task";
+import { api } from "@/lib/api";
+import { Task, TaskPriority, TaskStatus, UserSummary } from "@/types/task";
 import {
   X,
   Calendar,
   Tag,
+  User,
+  Check,
   AlertCircle,
   Plus,
   Sparkles,
@@ -23,18 +26,28 @@ interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialTask?: Task | null;
+  /** Pre-selects the column the "+" was clicked in. */
+  initialStatus?: TaskStatus;
 }
 
 const CATEGORY_SUGGESTIONS = ["Design", "Frontend", "Backend", "UX/UI", "QA & Audit"];
 
-export function TaskModal({ isOpen, onClose, initialTask }: TaskModalProps) {
-  const { addTask, updateTask } = useTasks();
+export function TaskModal({
+  isOpen,
+  onClose,
+  initialTask,
+  initialStatus = "todo",
+}: TaskModalProps) {
+  const { addTask, updateTask, labels } = useTasks();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<TaskStatus>("todo");
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [category, setCategory] = useState("Design");
   const [dueDate, setDueDate] = useState("");
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+  const [assigneeId, setAssigneeId] = useState("");
+  const [members, setMembers] = useState<UserSummary[]>([]);
   const [errors, setErrors] = useState<{ title?: string }>({});
 
   useEffect(() => {
@@ -45,18 +58,41 @@ export function TaskModal({ isOpen, onClose, initialTask }: TaskModalProps) {
       setPriority(initialTask.priority);
       setCategory(initialTask.category);
       setDueDate(initialTask.dueDate);
+      setSelectedLabels(initialTask.tags || []);
+      setAssigneeId(initialTask.assignee?.id || "");
     } else {
       setTitle("");
       setDescription("");
-      setStatus("todo");
+      setStatus(initialStatus);
       setPriority("medium");
       setCategory("Design");
       setDueDate(new Date().toISOString().split("T")[0]);
+      setSelectedLabels([]);
+      setAssigneeId("");
     }
     setErrors({});
-  }, [initialTask, isOpen]);
+  }, [initialTask, initialStatus, isOpen]);
+
+  // The member list drives the assignee picker; it's empty when API is offline.
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    api.users
+      .list()
+      .then((users) => !cancelled && setMembers(users))
+      .catch(() => !cancelled && setMembers([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const toggleLabel = (name: string) => {
+    setSelectedLabels((prev) =>
+      prev.includes(name) ? prev.filter((l) => l !== name) : [...prev, name],
+    );
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,24 +101,21 @@ export function TaskModal({ isOpen, onClose, initialTask }: TaskModalProps) {
       return;
     }
 
+    const payload = {
+      title: title.trim(),
+      description,
+      status,
+      priority,
+      category,
+      dueDate,
+      labels: selectedLabels,
+      ...(assigneeId ? { assigneeId } : {}),
+    };
+
     if (initialTask) {
-      updateTask(initialTask.id, {
-        title,
-        description,
-        status,
-        priority,
-        category,
-        dueDate,
-      });
+      updateTask(initialTask.id, payload);
     } else {
-      addTask({
-        title,
-        description,
-        status,
-        priority,
-        category,
-        dueDate,
-      });
+      addTask(payload);
     }
     onClose();
   };
@@ -95,9 +128,11 @@ export function TaskModal({ isOpen, onClose, initialTask }: TaskModalProps) {
   ];
 
   const priorityOptions: { id: TaskPriority; label: string; color: string }[] = [
+    { id: "no-priority", label: "None", color: "text-zinc-500 bg-zinc-500/10 border-zinc-500/30" },
     { id: "low", label: "Low", color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/30" },
     { id: "medium", label: "Medium", color: "text-amber-500 bg-amber-500/10 border-amber-500/30" },
     { id: "high", label: "High", color: "text-rose-500 bg-rose-500/10 border-rose-500/30" },
+    { id: "urgent", label: "Urgent", color: "text-rose-600 bg-rose-600/10 border-rose-600/40" },
   ];
 
   return (
@@ -196,7 +231,7 @@ export function TaskModal({ isOpen, onClose, initialTask }: TaskModalProps) {
               <Signal className="w-3 h-3" />
               <span>Priority Level</span>
             </label>
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5">
               {priorityOptions.map((p) => {
                 const isSelected = priority === p.id;
                 return (
@@ -266,6 +301,68 @@ export function TaskModal({ isOpen, onClose, initialTask }: TaskModalProps) {
                 <Calendar className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-3" />
               </div>
             </div>
+          </div>
+
+          {/* Labels */}
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-2">
+              Labels
+            </label>
+            {labels.length === 0 ? (
+              <p className="text-[11px] font-medium text-zinc-400">
+                Labels appear here once the API is running.
+              </p>
+            ) : (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {labels.map((label) => {
+                  const isSelected = selectedLabels.includes(label.name);
+                  return (
+                    <button
+                      key={label.id}
+                      type="button"
+                      onClick={() => toggleLabel(label.name)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                        isSelected
+                          ? "border-transparent text-white shadow-2xs"
+                          : "theme-border theme-muted text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                      }`}
+                      style={isSelected ? { backgroundColor: label.color } : undefined}
+                    >
+                      {isSelected ? (
+                        <Check className="w-3 h-3" />
+                      ) : (
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: label.color }}
+                        />
+                      )}
+                      {label.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Assignee */}
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-1.5 flex items-center gap-1">
+              <User className="w-3 h-3" />
+              <span>Assignee</span>
+            </label>
+            <select
+              value={assigneeId}
+              onChange={(e) => setAssigneeId(e.target.value)}
+              disabled={members.length === 0}
+              className="w-full h-10 px-3 rounded-xl theme-muted theme-border border text-xs font-medium theme-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] disabled:opacity-50"
+            >
+              <option value="">Unassigned</option>
+              {members.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} — {m.role}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Footer Actions */}

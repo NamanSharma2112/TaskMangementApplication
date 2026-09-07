@@ -12,9 +12,11 @@ interface TaskListProps {
 }
 
 const statusGroups: { id: TaskStatus; label: string }[] = [
+  { id: "backlog", label: "Backlog" },
   { id: "todo", label: "To Do" },
   { id: "in-progress", label: "Doing" },
   { id: "completed", label: "Completed" },
+  { id: "on-hold", label: "On Hold" },
 ];
 
 export function TaskList({ tasks, onEditTask, onAddTaskGroup, visibleFields }: TaskListProps) {
