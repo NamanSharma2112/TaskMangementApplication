@@ -1,7 +1,9 @@
-import { Injectable, ExecutionContext } from '@nestjs/common';
+import { Injectable, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+
+const PUBLIC_ROUTE = Symbol('isPublicRoute');
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -15,10 +17,23 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       context.getClass(),
     ]);
 
-    if (isPublic) {
-      return true;
-    }
+    // Public routes still run the strategy so that a caller who *does* send a
+    // valid token is identified — that's what attributes activity entries and
+    // suppresses self-notifications. Missing or bad tokens are tolerated below.
+    context.switchToHttp().getRequest()[PUBLIC_ROUTE] = !!isPublic;
 
     return super.canActivate(context);
+  }
+
+  handleRequest<TUser>(err: any, user: TUser, info: any, context: ExecutionContext): TUser {
+    if (context.switchToHttp().getRequest()[PUBLIC_ROUTE]) {
+      return (user || undefined) as TUser;
+    }
+
+    if (err || !user) {
+      throw err || new UnauthorizedException('A valid Bearer token is required.');
+    }
+
+    return user;
   }
 }

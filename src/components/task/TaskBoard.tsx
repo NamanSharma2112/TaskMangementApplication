@@ -14,6 +14,7 @@ interface TaskBoardProps {
 }
 
 const columns: { id: TaskStatus; title: string; colorDot: string }[] = [
+  { id: "backlog", title: "Backlog", colorDot: "bg-zinc-400" },
   { id: "todo", title: "To Do", colorDot: "bg-amber-400" },
   { id: "in-progress", title: "Doing", colorDot: "bg-blue-500" },
   { id: "completed", title: "Completed", colorDot: "bg-emerald-500" },
@@ -74,7 +75,7 @@ export function TaskBoard({ tasks, onEditTask, onAddTaskColumn }: TaskBoardProps
       variants={containerVariants}
       initial="hidden"
       animate="show"
-      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 overflow-x-auto pb-4"
+      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 overflow-x-auto pb-4"
     >
       {columns.map((col) => {
         const colTasks = tasks.filter((t) =>

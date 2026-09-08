@@ -1,25 +1,46 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { Task, TaskPriority, TaskStatus } from "@/types/task";
-
-const API_BASE_URL = "http://localhost:4000/api/tasks";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { api, ApiError } from "@/lib/api";
+import { Label, Task, TaskInput, TaskStatus } from "@/types/task";
 
 interface TaskContextType {
   tasks: Task[];
-  addTask: (task: Omit<Task, "id" | "createdAt">) => void;
-  updateTask: (id: string, updatedFields: Partial<Task>) => void;
-  deleteTask: (id: string) => void;
-  moveTaskStatus: (id: string, newStatus: TaskStatus) => void;
+  labels: Label[];
+  isLoading: boolean;
+  error: string | null;
+  addTask: (task: TaskInput) => Promise<void>;
+  updateTask: (id: string, updatedFields: Record<string, unknown>) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
+  archiveTask: (id: string, archived?: boolean) => Promise<void>;
+  duplicateTask: (id: string) => Promise<void>;
+  bulkUpdateTasks: (ids: string[], changes: Record<string, unknown>) => Promise<void>;
+  moveTaskStatus: (id: string, newStatus: TaskStatus) => Promise<void>;
+  reorderTasks: (status: TaskStatus, orderedIds: string[]) => Promise<void>;
+  refresh: () => Promise<void>;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   statusFilter: string;
   setStatusFilter: (status: string) => void;
   priorityFilter: string;
   setPriorityFilter: (priority: string) => void;
+  labelFilter: string;
+  setLabelFilter: (label: string) => void;
+  showArchived: boolean;
+  setShowArchived: (value: boolean) => void;
   isBackendConnected: boolean;
 }
 
+const STORAGE_KEY = "pyramid-tasks";
+
+/** Shown only when the API is unreachable, so the board is never blank. */
 const initialMockTasks: Task[] = [
   {
     id: "task-1",
@@ -27,95 +48,47 @@ const initialMockTasks: Task[] = [
     description: "",
     status: "todo",
     priority: "no-priority",
-    category: "Deployment",
-    tags: ["Deployment", "Deployment"],
+    category: "Documentation",
+    tags: ["Documentation"],
     dueDate: "29 Jul",
     createdAt: "2026-08-01",
-    assignee: { name: "Admin", avatar: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80" },
+    assignee: { name: "Admin" },
   },
   {
     id: "task-2",
     title: "Implement Search Function",
     description: "",
     status: "todo",
-    priority: "no-priority",
-    category: "Deployment",
-    tags: ["Deployment", "Deployment"],
+    priority: "medium",
+    category: "Frontend",
+    tags: ["Frontend"],
     dueDate: "29 Jul",
     createdAt: "2026-08-01",
-    assignee: { name: "Admin", avatar: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80" },
+    assignee: { name: "Admin" },
   },
   {
     id: "task-3",
-    title: "Deploy to Production",
-    description: "",
-    status: "todo",
-    priority: "no-priority",
-    category: "Deployment",
-    tags: ["Deployment", "Deployment"],
-    dueDate: "29 Jul",
-    createdAt: "2026-08-01",
-    assignee: { name: "Admin", avatar: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80" },
-  },
-  {
-    id: "task-4",
     title: "Code Review Completed",
     description: "",
     status: "in-progress",
-    priority: "no-priority",
-    category: "Deployment",
-    tags: ["Deployment", "Deployment"],
+    priority: "high",
+    category: "Backend",
+    tags: ["Backend"],
     dueDate: "29 Jul",
     createdAt: "2026-08-01",
-    assignee: { name: "Admin", avatar: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80" },
+    assignee: { name: "Admin" },
   },
   {
-    id: "task-5",
-    title: "Design Mockups Finalized",
-    description: "",
-    status: "in-progress",
-    priority: "no-priority",
-    category: "Deployment",
-    tags: ["Deployment", "Deployment"],
-    dueDate: "29 Jul",
-    createdAt: "2026-08-01",
-    assignee: { name: "Admin", avatar: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80" },
-  },
-  {
-    id: "task-6",
+    id: "task-4",
     title: "Feature Testing Passed",
     description: "",
     status: "completed",
-    priority: "no-priority",
+    priority: "medium",
     category: "Testing",
-    tags: ["Testing", "Passed"],
+    tags: ["Testing"],
     dueDate: "30 Jul",
     createdAt: "2026-08-01",
-    assignee: { name: "QA Team", avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80" },
-  },
-  {
-    id: "task-7",
-    title: "UI Design Updated",
-    description: "",
-    status: "completed",
-    priority: "no-priority",
-    category: "Design",
-    tags: ["Design", "Updated"],
-    dueDate: "31 Jul",
-    createdAt: "2026-08-01",
-    assignee: { name: "Designer", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80" },
-  },
-  {
-    id: "task-8",
-    title: "Security Audit Scheduled",
-    description: "",
-    status: "completed",
-    priority: "no-priority",
-    category: "Audit",
-    tags: ["Audit", "Scheduled"],
-    dueDate: "01 Aug",
-    createdAt: "2026-08-01",
-    assignee: { name: "Security", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" },
+    assignee: { name: "QA Team" },
   },
 ];
 
@@ -123,118 +96,238 @@ const TaskContext = createContext<TaskContextType | undefined>(undefined);
 
 export function TaskProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [labels, setLabels] = useState<Label[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const [labelFilter, setLabelFilter] = useState("all");
+  const [showArchived, setShowArchived] = useState(false);
   const [isBackendConnected, setIsBackendConnected] = useState(false);
 
-  // Fetch tasks from NestJS PostgreSQL Backend API
-  const fetchTasksFromBackend = async () => {
-    try {
-      const res = await fetch(API_BASE_URL);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setTasks(data);
-          setIsBackendConnected(true);
-          localStorage.setItem("pyramid-tasks", JSON.stringify(data));
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn("Backend API offline, falling back to local persistence", e);
-      setIsBackendConnected(false);
-    }
-
-    const saved = localStorage.getItem("pyramid-tasks");
+  const loadLocalFallback = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
         setTasks(JSON.parse(saved));
+        return;
       } catch {
-        setTasks(initialMockTasks);
+        /* corrupt cache — fall through to the seed set */
       }
-    } else {
-      setTasks(initialMockTasks);
-      localStorage.setItem("pyramid-tasks", JSON.stringify(initialMockTasks));
     }
-  };
-
-  useEffect(() => {
-    fetchTasksFromBackend();
+    setTasks(initialMockTasks);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(initialMockTasks));
   }, []);
 
-  const saveTasks = (newTasks: Task[]) => {
-    setTasks(newTasks);
-    localStorage.setItem("pyramid-tasks", JSON.stringify(newTasks));
+  const refresh = useCallback(async () => {
+    try {
+      const [fetchedTasks, fetchedLabels] = await Promise.all([
+        api.tasks.list({ archived: showArchived ? "only" : "false" }),
+        api.labels.list(),
+      ]);
+      setTasks(fetchedTasks);
+      setLabels(fetchedLabels);
+      setIsBackendConnected(true);
+      setError(null);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(fetchedTasks));
+    } catch (e) {
+      console.warn("Backend API unavailable, using local persistence", e);
+      setIsBackendConnected(false);
+      loadLocalFallback();
+    } finally {
+      setIsLoading(false);
+    }
+  }, [showArchived, loadLocalFallback]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  /** Keeps offline edits durable; a no-op once the API is the source of truth. */
+  const persistLocally = (next: Task[]) => {
+    setTasks(next);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   };
 
-  const addTask = async (taskData: Omit<Task, "id" | "createdAt">) => {
-    const newTask: Task = {
-      ...taskData,
-      id: "task-" + Date.now(),
-      createdAt: new Date().toISOString().split("T")[0],
-    };
+  const reportError = (e: unknown, fallback: string) => {
+    const message = e instanceof ApiError ? e.message : fallback;
+    setError(message);
+    console.error(fallback, e);
+  };
 
-    // Optimistic UI update
-    saveTasks([newTask, ...tasks]);
+  const addTask = async (taskData: TaskInput) => {
+    if (!isBackendConnected) {
+      persistLocally([
+        {
+          ...(taskData as Task),
+          id: "task-" + Date.now(),
+          createdAt: new Date().toISOString().split("T")[0],
+        },
+        ...tasks,
+      ]);
+      return;
+    }
 
-    // Send to NestJS Backend API
     try {
-      await fetch(API_BASE_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(taskData),
-      });
-      fetchTasksFromBackend();
+      const created = await api.tasks.create(taskData);
+      setTasks((prev) => [created, ...prev]);
+      setError(null);
     } catch (e) {
-      console.error("Failed to sync task with NestJS backend:", e);
+      reportError(e, "Failed to create the task.");
     }
   };
 
-  const updateTask = async (id: string, updatedFields: Partial<Task>) => {
-    saveTasks(
-      tasks.map((t) => (t.id === id ? { ...t, ...updatedFields } : t))
+  const updateTask = async (id: string, updatedFields: Record<string, unknown>) => {
+    // Optimistic update so the board reacts immediately on drag or edit.
+    const previous = tasks;
+    setTasks((prev) =>
+      prev.map((t) => (t.id === id ? ({ ...t, ...updatedFields } as Task) : t)),
     );
 
+    if (!isBackendConnected) {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(previous.map((t) => (t.id === id ? { ...t, ...updatedFields } : t))),
+      );
+      return;
+    }
+
     try {
-      await fetch(`${API_BASE_URL}/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updatedFields),
-      });
+      const updated = await api.tasks.update(id, updatedFields);
+      setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+      setError(null);
     } catch (e) {
-      console.error("Failed to sync update with NestJS backend:", e);
+      setTasks(previous);
+      reportError(e, "Failed to save the task.");
     }
   };
 
   const deleteTask = async (id: string) => {
-    saveTasks(tasks.filter((t) => t.id !== id));
+    const previous = tasks;
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+
+    if (!isBackendConnected) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(previous.filter((t) => t.id !== id)));
+      return;
+    }
 
     try {
-      await fetch(`${API_BASE_URL}/${id}`, { method: "DELETE" });
+      await api.tasks.remove(id);
+      setError(null);
     } catch (e) {
-      console.error("Failed to sync delete with NestJS backend:", e);
+      setTasks(previous);
+      reportError(e, "Failed to delete the task. Deleting requires an ADMIN or MANAGER role.");
+    }
+  };
+
+  const archiveTask = async (id: string, archived = true) => {
+    if (!isBackendConnected) {
+      persistLocally(tasks.filter((t) => t.id !== id));
+      return;
+    }
+
+    try {
+      await api.tasks.archive(id, archived);
+      // Archived tasks leave the active board (and vice-versa), so re-fetch.
+      await refresh();
+      setError(null);
+    } catch (e) {
+      reportError(e, "Failed to archive the task.");
+    }
+  };
+
+  const duplicateTask = async (id: string) => {
+    if (!isBackendConnected) return;
+    try {
+      const copy = await api.tasks.duplicate(id);
+      setTasks((prev) => [copy, ...prev]);
+      setError(null);
+    } catch (e) {
+      reportError(e, "Failed to duplicate the task.");
+    }
+  };
+
+  const bulkUpdateTasks = async (ids: string[], changes: Record<string, unknown>) => {
+    if (!isBackendConnected || ids.length === 0) return;
+    try {
+      const { tasks: updated } = await api.tasks.bulkUpdate(ids, changes);
+      const byId = new Map(updated.map((t) => [t.id, t]));
+      setTasks((prev) => prev.map((t) => byId.get(t.id) ?? t));
+      setError(null);
+    } catch (e) {
+      reportError(e, "Failed to apply the bulk update.");
     }
   };
 
   const moveTaskStatus = async (id: string, newStatus: TaskStatus) => {
-    updateTask(id, { status: newStatus });
+    await updateTask(id, { status: newStatus });
   };
+
+  const reorderTasks = async (status: TaskStatus, orderedIds: string[]) => {
+    if (!isBackendConnected) return;
+    try {
+      await api.tasks.reorder(status, orderedIds);
+      setError(null);
+    } catch (e) {
+      reportError(e, "Failed to save the new order.");
+    }
+  };
+
+  // Filtering runs client-side so typing in the search box stays instant; the
+  // API exposes the same filters for callers that need server-side paging.
+  const filteredTasks = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return tasks.filter((task) => {
+      const matchesSearch =
+        !query ||
+        task.title.toLowerCase().includes(query) ||
+        (task.description || "").toLowerCase().includes(query) ||
+        (task.category || "").toLowerCase().includes(query) ||
+        (task.tags || []).some((tag) => tag.toLowerCase().includes(query));
+
+      const matchesPriority = priorityFilter === "all" || task.priority === priorityFilter;
+
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "in-progress"
+          ? task.status === "in-progress" || task.status === "doing"
+          : task.status === statusFilter);
+
+      const matchesLabel =
+        labelFilter === "all" || (task.tags || []).includes(labelFilter);
+
+      return matchesSearch && matchesPriority && matchesStatus && matchesLabel;
+    });
+  }, [tasks, searchQuery, priorityFilter, statusFilter, labelFilter]);
 
   return (
     <TaskContext.Provider
       value={{
-        tasks,
+        tasks: filteredTasks,
+        labels,
+        isLoading,
+        error,
         addTask,
         updateTask,
         deleteTask,
+        archiveTask,
+        duplicateTask,
+        bulkUpdateTasks,
         moveTaskStatus,
+        reorderTasks,
+        refresh,
         searchQuery,
         setSearchQuery,
         statusFilter,
         setStatusFilter,
         priorityFilter,
         setPriorityFilter,
+        labelFilter,
+        setLabelFilter,
+        showArchived,
+        setShowArchived,
         isBackendConnected,
       }}
     >
