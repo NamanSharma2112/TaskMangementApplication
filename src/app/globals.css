@@ -3,6 +3,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
+  --font-display: var(--font-instrument-sans), system-ui, sans-serif;
+  --font-data: var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-background: hsl(var(--background));
@@ -173,6 +175,10 @@ body {
 
 .theme-btn-primary:hover {
   opacity: 0.9;
+}
+
+.theme-card-blur {
+  background-color: hsl(var(--card) / 0.82);
 }
 
 .theme-card {
